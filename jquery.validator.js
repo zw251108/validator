@@ -2,19 +2,23 @@
  * @file    基于 jQuery 的 validator 插件
  * @author  ZwB
  * @version 1.0
- * @function    $.validator
+ * @module  validator
+ * @require jquery
+ * @method  $.validator
+ * @desc
+ *  <pre>
+ *  validType       验证类型 对象集合 每一个属性都是一种验证类别 每一个属性对应一个对象
+        该对象中的属性名 对应着执行验证的方法 值为提示信息
+
+ *  validMethods    验证方法 对象集合 每一个方法都是使用 apply 方式被调用，方法中的 this 是进行验证的 jQuery 对象
+ *  </pre>
  * @param   {object}    options
  * @param   {string|object} options.selector    需要验证的表单对象
  * @param   {function}  options.normal  重置表单时的操作
  * @param   {function}  options.focus   表单项获得焦点时的操作
  * @param   {function}  options.wrong   表单项未通过验证时的操作
  * @param   {function}  options.right   表单项通过验证时的操作
- * @return  {object}(jQuery)    参数 selector 所对应的 jQuery 对象
- * @desc
- *  validType       验证类型 对象集合 每一个属性都是一种验证类别 每一个属性对应一个对象
- 该对象中的属性名 对应着执行验证的方法 值为提示信息
-
- *  validMethods    验证方法 对象集合 每一个方法都是使用 apply 方式被调用，方法中的 this 是进行验证的 jQuery 对象
+ * @return  {object}    参数 selector 所对应的 jQuery 对象
  * @example
  *  JavaScript 代码：
  $(function(){
@@ -48,10 +52,11 @@
             }
         });
     })
- *  HTML 代码:
+ *  HTML 代码：
  <form id="userNameForm" action="">
     <input type="text" name="username" id="username" data-validator="username" /><span></span>
  </form>
+ * @todo    重构
  */
 ;(function(factory, jqPath){
 	if( typeof exports === 'object' && typeof module === 'object' ){
@@ -64,6 +69,8 @@
 		factory(jQuery);
 	}
 })(function($){
+	'use strict';
+
 	var methods = {
 			valid: function(){
 				var $items = this.formItems
@@ -89,13 +96,13 @@
 
 				return result;
 			}
-			, reset: function(){ // 重置表单
+			, reset: function(deep){ // 重置表单
 				var $items = this.formItems
 					, i = $items.length
 					, normal = this.validOpts.normal
 					;
 
-				this.get(0).reset();    // 重置表单项的值
+				deep && this.get(0).reset();    // 重置表单项的值
 
 				while( i-- ){
 					normal.apply( $items.eq(i) );
@@ -153,7 +160,7 @@
 		$form = (typeof $form === 'object' && $form.jQuery) ? $form : $($form);
 
 		$form.on({
-			submit: function(e){
+			'submit.validator': function(e){
 
 				var rs = $form.valid();
 
@@ -210,6 +217,10 @@
 					else if( validName === 'and' ){ // 多项同时填写
 						isValid = isValid && validMethods.and.apply($item, validTemp);
 					}
+					else{   // 自定义
+						isValid = validMethods[validName].apply($item);
+						isRequired = false;
+					}
 					result = isValid;
 				}
 				else{ // 未设置 为选填
@@ -231,11 +242,12 @@
 				else{
 					if( isRequired ){
 						wrong.call($item, validText);
+						result = false;
 					}
 					else{
 						opts.normal.call($item);
+						result = true;
 					}
-					result = false;
 				}
 
 				if( result ){ // 通过验证
@@ -314,7 +326,7 @@
 			return result;
 		}
 		, or: function(){
-			// 检测当前标签与目标标签至少一个不为空，参数至少 README 个 为 jquery 选择器
+			// 检测当前标签与目标标签至少一个不为空，参数至少 1 个 为 jquery 选择器
 
 			var required = Validator.validMethods.required
 				, result = required.apply( this )
@@ -336,7 +348,7 @@
 			return result;
 		}
 		, and: function(){
-			// 检测当前标签与目标标签同时不为空，参数至少 README 个 为 jquery 选择器
+			// 检测当前标签与目标标签同时不为空，参数至少 1 个 为 jquery 选择器
 
 			var required = Validator.validMethods.required
 				, result = required.apply( this )
@@ -361,7 +373,7 @@
 		 *  特殊标签验证
 		 * */
 		, select: function(min, max){
-			// 检测设置了 multiple 属性的 select 标签的可选个数，至少 README 个参数，参数 README 为最小选择个数，参数 2 为最大选择个数（可选），其余参数忽略
+			// 检测设置了 multiple 属性的 select 标签的可选个数，至少 1 个参数，参数 1 为最小选择个数，参数 2 为最大选择个数（可选），其余参数忽略
 
 			var result = false
 				, argc
@@ -392,7 +404,7 @@
 			return result;
 		}
 		, checkbox: function(min, max){
-			// 检测 checkbox 的可选个数，至少 README 个参数，参数 README 为最小选择个数，参数 2 为最大选择个数（可选），其余参数忽略
+			// 检测 checkbox 的可选个数，至少 1 个参数，参数 1 为最小选择个数，参数 2 为最大选择个数（可选），其余参数忽略
 
 			var result = false
 				, argc
@@ -423,7 +435,7 @@
 		 *  字符串类型验证
 		 * */
 		, length: function(min, max){
-			// 检测字符串长度，至少 README 个参数，参数 README 为最小长度，参数 2 为最大长度（可选），其余参数忽略
+			// 检测字符串长度，至少 1 个参数，参数 1 为最小长度，参数 2 为最大长度（可选），其余参数忽略
 
 			var result = false
 				, argc = arguments.length
@@ -484,7 +496,7 @@
 			return /^-?\d+\.?\d*$/.test( this.val() );
 		}
 		, limit: function(min, max){
-			// 检测数值大小，至少 README 个参数，参数 README 为最小值，参数 2 为最大值（可选），其余参数忽略
+			// 检测数值大小，至少 1 个参数，参数 1 为最小值，参数 2 为最大值（可选），其余参数忽略
 
 			var result = false
 				, argc = arguments.length
@@ -504,7 +516,7 @@
 			return result;
 		}
 		, decimal: function(digit, size){
-			// 检测浮点型数值，至少 README 个参数，参数 README 为小数点右侧的最大位数，参数 2 为数字的最大位数（可选），其余参数忽略
+			// 检测浮点型数值，至少 1 个参数，参数 1 为小数点右侧的最大位数，参数 2 为数字的最大位数（可选），其余参数忽略
 
 			var result = false
 				, argc = arguments.length
@@ -513,12 +525,12 @@
 				;
 
 			if( argc === 1 ){
-				regexp = new RegExp('^-?\d+\.?\d{0,'+ digit +'}$');
+				regexp = new RegExp('^-?\\d+\\.?\\d{0,'+ digit +'}$');
 				result = regexp.test( this.val() );
 			}
 			else if( argc > 1 ){
 				temp = size - digit;
-				regexp = new RegExp('^-?\d'+ (temp >= 1 ? '{README'+ (temp === 1 ? '' : ','+ temp) +'}' : '+') +'\.?\d{0,'+ digit +'}$');
+				regexp = new RegExp('^-?\\d'+ (temp >= 1 ? '{1'+ (temp === 1 ? '' : ','+ temp) +'}' : '+') +'\\.?\\d{0,'+ digit +'}$');
 				result = regexp.test( this.val() );
 			}
 			else{
