@@ -73,7 +73,7 @@
 
 	var methods = {
 			valid: function(){
-				var $items = this.formItems
+				var $items = this.find('[data-validator]')
 					, i = $items.length
 					, validType = $.validator.validType
 					, $item
@@ -97,7 +97,7 @@
 				return result;
 			}
 			, reset: function(deep){ // 重置表单
-				var $items = this.formItems
+				var $items = this.find('[data-validator]')
 					, i = $items.length
 					, normal = this.validOpts.normal
 					;
@@ -141,7 +141,7 @@
 			, validMethods = Validator.validMethods
 			, validEvent = Validator.validEvent
 			, validTrigger = function(){
-				var $self = $form.formItems.filter(this)
+				var $self = $(this)
 					, type = $self.data('validator')
 					;
 
@@ -267,7 +267,7 @@
 			}
 		}).on('focus', '[data-validator]', function(){
 
-			var $self = $form.formItems.filter(this)
+			var $self = $(this)
 				, type = $self.data('validator')
 				;
 
@@ -287,7 +287,6 @@
 		}
 
 		$form.validOpts = opts;
-		$form.formItems = $form.find('[data-validator]');
 		$.extend($form, methods);
 
 		return $form;
