@@ -8,16 +8,16 @@
  * @desc
  *  <pre>
  *  validType       验证类型 对象集合 每一个属性都是一种验证类别 每一个属性对应一个对象
-        该对象中的属性名 对应着执行验证的方法 值为提示信息
+ 该对象中的属性名 对应着执行验证的方法 值为提示信息
 
  *  validMethods    验证方法 对象集合 每一个方法都是使用 apply 方式被调用，方法中的 this 是进行验证的 jQuery 对象
  *  </pre>
  * @param   {object}    options
- * @param   {string|object} options.selector    需要验证的表单对象
- * @param   {function}  options.normal  重置表单时的操作
- * @param   {function}  options.focus   表单项获得焦点时的操作
- * @param   {function}  options.wrong   表单项未通过验证时的操作
- * @param   {function}  options.right   表单项通过验证时的操作
+ * @param   {(string|object)}   options.selector    需要验证的表单对象
+ * @param   {function(string)}  options.normal  重置表单时的操作
+ * @param   {function(string)}  options.focus   表单项获得焦点时的操作
+ * @param   {function(string)}  options.wrong   表单项未通过验证时的操作
+ * @param   {function(string)}  options.right   表单项通过验证时的操作
  * @return  {object}    参数 selector 所对应的 jQuery 对象
  * @example
  *  JavaScript 代码：
@@ -54,10 +54,11 @@
     })
  *  HTML 代码：
  <form id="userNameForm" action="">
-    <input type="text" name="username" id="username" data-validator="username" /><span></span>
+ <input type="text" name="username" id="username" data-validator="username" /><span></span>
  </form>
  * @todo    重构
- */
+ * @todo    submit 事件可以不触发
+ * */
 ;(function(factory, jqPath){
 	if( typeof exports === 'object' && typeof module === 'object' ){
 		factory( require(jqPath || 'jquery') );
@@ -133,7 +134,9 @@
 			console && console.log && console.log( msg );
 		}
 		;
-
+	/**
+	 * @namespace   Validator
+	 * */
 	var Validator = function( options ){
 		var opts = $.extend({}, Validator.defaults, options)
 			, $form = opts.selector
@@ -169,6 +172,9 @@
 				}
 
 				return rs;
+			}
+			, 'reset.validator': function(e){
+				$form.reset();
 			}
 			, valid: function(e, $item, type){
 
@@ -216,8 +222,9 @@
 					}
 					else if( validName === 'and' ){ // 多项同时填写
 						isValid = isValid && validMethods.and.apply($item, validTemp);
+						isRequired = false;
 					}
-					else{   // 自定义
+					else{   // 自定义，视为选填项，根据返回结果是否继续验证
 						isValid = validMethods[validName].apply($item);
 						isRequired = false;
 					}
@@ -265,7 +272,7 @@
 
 				return result;
 			}
-		}).on('focus', '[data-validator]', function(){
+		}).on('focus.validator', '[data-validator]', function(){
 
 			var $self = $(this)
 				, type = $self.data('validator')
@@ -283,7 +290,7 @@
 		});
 
 		for( k in validEvent ) if( validEvent.hasOwnProperty(k) ){
-			$form.on(validEvent[k], k +'[data-validator]', validTrigger);
+			$form.on(validEvent[k] +'.validator', k +'[data-validator]', validTrigger);
 		}
 
 		$form.validOpts = opts;
@@ -298,21 +305,66 @@
 		, right:null
 		, normal:null
 	};
+	/**
+	 * @memberof    Validator
+	 * @namespace   validType
+	 * @desc    验证类型集合
+	 * @example
+	 $.validator.validType.username = {// 用户名 验证配置
+            type: ['required', '请填写用户名'],
+            trim: true, // 验证时对值进行 trim
+            focus: '请输入6~12位数字、字母、下划线组合，并以字母开头', // 获得焦点时的操作
+            valid:[
+                ['regexp', /^[a-z]/i],
+                ['regexp', /^[a-z0-9_]$/i],
+                ['length', 6, 20],
+                ['ajax', 'url', '']
+            ],
+            text:['只能字母开头', '只能输入数字、字母、下划线组合', '只能输入6~12位字符', '该用户名已被注册，请尝试其他用户名'],
+            right:'',
+            callback:function(rs){alert(rs?'通过验证':'未通过验证')} // 验证后的回调函数
+        };
+	 * */
 	Validator.validType = {};
+	/**
+	 * @memberof    Validator
+	 * @namespace   validEvent
+	 * @desc    验证事件类型
+	 * 默认事件类型：
+	 * <pre>
+	 selector    事件
+	 :text       blur
+	 :password   blur
+	 :radio      click
+	 :checkbox   click
+	 select      change
+	 textarea    blur
+	 * </pre>
+	 * */
 	Validator.validEvent = {
 		':text': 'blur'
 		, ':password': 'blur'
 		, ':radio': 'click'
 		, ':checkbox': 'click'
 		, 'select': 'change'
+		, 'textarea': 'blur'
 	};
+	/**
+	 * @memberof    Validator
+	 * @namespace   validMethods
+	 * @desc    验证方法集合
+	 * */
 	Validator.validMethods = {
 		/**
 		 *  必填项验证
 		 * */
+		/**
+		 * @memberof    Validator.validMethods
+		 * @method  required
+		 * @return  {boolean}   验证结果
+		 * @desc    验证是否为空
+		 * */
 		required: function(){
-			// 验证是否为空
-
 			var result = false;
 
 			if( this.is(':radio,:checkbox') ){
@@ -324,9 +376,14 @@
 
 			return result;
 		}
-		, or: function(){
-			// 检测当前标签与目标标签至少一个不为空，参数至少 1 个 为 jquery 选择器
-
+		/**
+		 * @method  or
+		 * @memberof    Validator.validMethods
+		 * @param   {string=}   selector   参数至少 1 个 为 jquery 选择器
+		 * @return  {boolean}   验证结果
+		 * @desc    检测当前标签与目标标签至少一个不为空，参数至少 1 个 为 jquery 选择器
+		 * */
+		, or: function(selector){
 			var required = Validator.validMethods.required
 				, result = required.apply( this )
 				, argc = arguments.length
@@ -346,8 +403,15 @@
 
 			return result;
 		}
-		, and: function(){
-			// 检测当前标签与目标标签同时不为空，参数至少 1 个 为 jquery 选择器
+		/**
+		 * @method  and
+		 * @memberof    Validator.validMethods
+		 * @param   {string=}   selector    参数至少 1 个 为 jquery 选择器
+		 * @return  {boolean}   验证结果
+		 * @desc    检测当前标签与目标标签同时不为空，参数至少 1 个 为 jquery 选择器
+		 * */
+		, and: function(selector){
+			//
 
 			var required = Validator.validMethods.required
 				, result = required.apply( this )
@@ -371,9 +435,15 @@
 		/**
 		 *  特殊标签验证
 		 * */
+		/**
+		 * @method  select
+		 * @memberof    Validator.validMethods
+		 * @param   {number}    min 最小选择个数
+		 * @param   {number=}   max 最大选择个数（可选）
+		 * @return  {boolean}   验证结果
+		 * @desc    检测设置了 multiple 属性的 select 标签的可选个数，至少 1 个参数，参数 1 为最小选择个数，参数 2 为最大选择个数（可选），其余参数忽略
+		 * */
 		, select: function(min, max){
-			// 检测设置了 multiple 属性的 select 标签的可选个数，至少 1 个参数，参数 1 为最小选择个数，参数 2 为最大选择个数（可选），其余参数忽略
-
 			var result = false
 				, argc
 				, numSelect
@@ -402,9 +472,15 @@
 
 			return result;
 		}
+		/**
+		 * @method  checkbox
+		 * @memberof    Validator.validMethods
+		 * @param   {number}    min 最小选择个数
+		 * @param   {number=}   max 最大选择个数（可选）
+		 * @return  {boolean}   验证结果
+		 * @desc    检测 checkbox 的可选个数，至少 1 个参数，参数 1 为最小选择个数，参数 2 为最大选择个数（可选），其余参数忽略
+		 * */
 		, checkbox: function(min, max){
-			// 检测 checkbox 的可选个数，至少 1 个参数，参数 1 为最小选择个数，参数 2 为最大选择个数（可选），其余参数忽略
-
 			var result = false
 				, argc
 				, numChecked
@@ -433,9 +509,15 @@
 		/**
 		 *  字符串类型验证
 		 * */
+		/**
+		 * @method  length
+		 * @memberof    Validator.validMethods
+		 * @param   {number}    min 最小选择个数
+		 * @param   {number=}   max 最大选择个数（可选）
+		 * @return  {boolean}   验证结果
+		 * @desc    检测字符串长度，至少 1 个参数，参数 1 为最小长度，参数 2 为最大长度（可选），其余参数忽略
+		 * */
 		, length: function(min, max){
-			// 检测字符串长度，至少 1 个参数，参数 1 为最小长度，参数 2 为最大长度（可选），其余参数忽略
-
 			var result = false
 				, argc = arguments.length
 				, length = this.val().length
@@ -453,18 +535,31 @@
 
 			return result;
 		}
+		/**
+		 * @method  regexp
+		 * @memberof    Validator.validMethods
+		 * @param   {regexp=}   regexp
+		 * @return  {boolean}   验证结果
+		 * @desc    检测是否非法字符，reg 为正则表达式规则 默认值为 /^[a-z0-9_]*$/i
+		 * */
 		, regexp: function( regexp ){
-			// 检测是否非法字符，reg 为正则表达式规则 默认值为 /^[a-z0-9_]*$/i
-
 			return (regexp || /^[a-z0-9_]*$/i).test( this.val() );
 		}
-		, equal: function(selector){
-			// 检测与目标标签的 value 是否相等，参数 selector 为 jquery 选择器
-
+		/**
+		 *  比较类型验证
+		 * */
+		/**
+		 * @method  equal
+		 * @memberof    Validator.validMethods
+		 * @param   {*} value   一个固定数据
+		 * @return  {boolean}   验证结果
+		 * @desc    检测与目标 value 是否相等，参数 value 为一个固定数据
+		 * */
+		, equal: function(value){
 			var result = false;
 
-			if( selector ){
-				result = ( this.val() === $(selector).val() );
+			if( value ){
+				result = ( this.val() === value );
 			}
 			else{
 				log('参数设置错误');
@@ -472,31 +567,275 @@
 
 			return  result;
 		}
-		, unequal: function(selector){
-			// 检测与目标标签的 value 是否不相等 参数 selector 为 jquery 选择器
-
+		/**
+		 * @method  unequal
+		 * @memberof    Validator.validMethods
+		 * @param   {*} value   一个固定数据
+		 * @return  {boolean}   验证结果
+		 * @desc    检测与目标 value 是否不相等，参数 value 为一个固定数据
+		 * */
+		, unequal: function(value){
 			var result = false;
 
-			if( selector ){
-				result = ( this.val() !== $(selector).val() );
+			if( value ){
+				result = ( this.val() !== value );
 			}
 			else{
-				log('参数设置错误')
+				log('参数设置错误');
 			}
 
 			return result;
 		}
 		/**
+		 * @method  lt
+		 * @memberof    Validator.validMethods
+		 * @param   {*} value   一个固定数据
+		 * @param   {boolean}    equal   是否可以等于 value
+		 * @return  {boolean}   验证结果
+		 * @desc    检测是否小于目标 value，参数 value 为一个固定数据，equal 是否可以等于 value
+		 * */
+		, lt: function(value, equal){
+			var result = false;
+
+			if( value ){
+				result = equal ? ( this.val() <= value ) : ( this.val() < value );
+			}
+			else{
+				log('参数设置错误');
+			}
+
+			return result;
+		}
+		/**
+		 * @method  gt
+		 * @memberof    Validator.validMethods
+		 * @param   {*} value   一个固定数据
+		 * @param   {boolean}    equal   是否可以等于 value
+		 * @return  {boolean}   验证结果
+		 * @desc    检测是否大于目标 value，参数 value 为一个固定数据，equal 是否可以等于 value
+		 * */
+		, gt: function(value, equal){
+			var result = false;
+
+			if( value ){
+				result = equal ? ( this.val() >= value ) : ( this.val() > value );
+			}
+			else{
+				log('参数设置错误');
+			}
+
+			return result;
+		}
+
+		/**
+		 *  DOM 对象属性值比较类型验证
+		 * */
+		/**
+		 * @method  equalDOMProp
+		 * @memberof    Validator.validMethods
+		 * @param   {string}    selector    为 jquery 选择器，若只有一个参数则默认从 val 取值
+		 * @param   {string=}   method  为 jquery 方法名（attr,data,html,prop,text,val）
+		 * @param   {string=}   name    为属性名
+		 * @return  {boolean}   验证结果
+		 * @desc    检测与目标 dom 对象的属性值是否相等，至少一个参数，参数 selector 为 jquery 选择器，method 为 jquery 方法名（attr,data,prop,text,html），name 为属性名，若只有一个参数则默认从 val 取值
+		 * */
+		, equalDOMProp: function(selector, method, name){
+			var argc = arguments.length
+				, result = false
+				;
+			if( argc === 1 ){
+				result = ( this.val() === $(selector).val() );
+			}
+			else if( argc > 1 ){
+
+				switch( method ){
+					case 'html':
+					case 'text':
+					case 'val':
+						result = ( this.val() === $(selector)[method]() );
+						break;
+					case 'attr':
+					case 'data':
+					case 'prop':
+						if( name ){
+							result = ( this.val() === $(selector)[method]( name ) );
+						}
+						else{
+							log('参数设置错误');
+						}
+						break;
+					default:
+						log('参数设置错误');
+						break;
+				}
+			}
+			else{
+				log('参数设置错误');
+			}
+			return result;
+		}
+		/**
+		 * @method  unequalDOMProp
+		 * @memberof    Validator.validMethods
+		 * @param   {string}    selector    为 jquery 选择器，若只有一个参数则默认从 val 取值
+		 * @param   {string=}   method  为 jquery 方法名（attr,data,html,prop,text,val）
+		 * @param   {string=}   name    为属性名
+		 * @return  {boolean}   验证结果
+		 * @desc    检测与目标 dom 对象的属性值是否不相等，至少一个参数，参数 selector 为 jquery 选择器，method 为 jquery 方法名（attr,data,prop,text,html），name 为属性名，若只有一个参数则默认从 val 取值
+		 * */
+		, unequalDOMProp: function(selector, method, name){
+			// 检测与目标 dom 对象的属性值是否不相等，至少一个参数，参数 selector 为 jquery 选择器，method 为 jquery 方法名（attr,data,prop,text,html），name 为属性名，若只有一个参数则默认从 val 取值
+
+			var argc = arguments.length
+				, result = false
+				;
+			if( argc === 1 ){
+				result = ( this.val() !== $(selector).val() );
+			}
+			else if( argc > 1 ){
+
+				switch( method ){
+					case 'html':
+					case 'text':
+					case 'val':
+						result = ( this.val() !== $(selector)[method]() );
+						break;
+					case 'attr':
+					case 'data':
+					case 'prop':
+						if( name ){
+							result = ( this.val() !== $(selector)[method]( name ) );
+						}
+						else{
+							log('参数设置错误');
+						}
+						break;
+					default:
+						log('参数设置错误');
+						break;
+				}
+			}
+			else{
+				log('参数设置错误');
+			}
+			return result;
+		}
+		/**
+		 * @method  ltDOMProp
+		 * @memberof    Validator.validMethods
+		 * @param   {string}    selector    为 jquery 选择器，若只有一个参数则默认从 val 取值
+		 * @param   {boolean}   equal   是否可以与目标值相等
+		 * @param   {string=}   method  为 jquery 方法名（attr,data,html,prop,text,val）
+		 * @param   {string=}   name    为属性名
+		 * @return  {boolean}   验证结果
+		 * @desc    检测是否小于等于目标 dom 对象的属性值，至少一个参数，参数 selector 为 jquery 选择器，method 为 jquery 方法名（attr,data,prop,text,html），name 为属性名，若只有一个参数则默认从 val 取值
+		 * */
+		, ltDOMProp: function(selector, equal, method, name){
+			// 检测是否小于目标 dom 对象的属性值，至少一个参数，参数 selector 为 jquery 选择器，method 为 jquery 方法名（attr,data,prop,text,html），name 为属性名，若只有一个参数则默认从 val 取值
+
+			var argc = arguments.length
+				, result = false
+				;
+			if( argc === 1 ){
+				result = ( this.val() < $(selector).val() );
+			}
+			else if( argc > 1 ){
+
+				switch( method ){
+					case 'html':
+					case 'text':
+					case 'val':
+						result = ( this.val() < $(selector)[method]() );
+						break;
+					case 'attr':
+					case 'data':
+					case 'prop':
+						if( name ){
+							result = ( this.val() < $(selector)[method]( name ) );
+						}
+						else{
+							log('参数设置错误');
+						}
+						break;
+					default:
+						log('参数设置错误');
+						break;
+				}
+			}
+			else{
+				log('参数设置错误');
+			}
+			return result;
+		}
+		/**
+		 * @method  gtDOMProp
+		 * @memberof    Validator.validMethods
+		 * @param   {string}    selector    为 jquery 选择器，若只有一个参数则默认从 val 取值
+		 * @param   {boolean}   equal   是否可以与目标值相等
+		 * @param   {string=}   method  为 jquery 方法名（attr,data,html,prop,text,val）
+		 * @param   {string=}   name    为属性名
+		 * @return  {boolean}   验证结果
+		 * @desc    检测是否大于等于目标 dom 对象的属性值，至少一个参数，参数 selector 为 jquery 选择器，method 为 jquery 方法名（attr,data,prop,text,html），name 为属性名，若只有一个参数则默认从 val 取值
+		 * */
+		, gtDOMProp: function(selector, equal, method, name){
+			var argc = arguments.length
+				, result = false
+				;
+			if( argc === 1 ){
+				result = ( this.val() > $(selector).val() );
+			}
+			else if( argc === 2 ){
+				result = ( this.val() >= $(selector).val() );
+			}
+			else if( argc > 2 ){
+
+				switch( method ){
+					case 'html':
+					case 'text':
+					case 'val':
+						result = equal ? ( this.val() >= $(selector)[method]() ) : ( this.val() > $(selector)[method]() );
+						break;
+					case 'attr':
+					case 'data':
+					case 'prop':
+						if( name ){
+							result = equal ? ( this.val() >= $(selector)[method]( name ) ) : ( this.val() > $(selector)[method]( name ) );
+						}
+						else{
+							log('参数设置错误');
+						}
+						break;
+					default:
+						log('参数设置错误');
+						break;
+				}
+			}
+			else{
+				log('参数设置错误');
+			}
+			return result;
+		}
+		/**
 		 *  数字类型验证
 		 * */
+		/**
+		 * @method  isNumber
+		 * @memberof    Validator.validMethods
+		 * @return  {boolean}   检测结果
+		 * @desc    检测是否为数字 包括负数和小数的情况
+		 * */
 		, isNumber: function(){
-			// 检测是否为数字 包括负数和小数的情况
-
 			return /^-?\d+\.?\d*$/.test( this.val() );
 		}
+		/**
+		 * @method  limit
+		 * @memberof    Validator.validMethods
+		 * @param   {number}    min 最小值
+		 * @param   {number=}   max 最大值（可选）
+		 * @return  {boolean}   验证结果
+		 * @desc    检测数值大小，至少 1 个参数，参数 1 为最小值，参数 2 为最大值（可选），其余参数忽略
+		 * */
 		, limit: function(min, max){
-			// 检测数值大小，至少 1 个参数，参数 1 为最小值，参数 2 为最大值（可选），其余参数忽略
-
 			var result = false
 				, argc = arguments.length
 				, value = Number( this.val() )
@@ -514,9 +853,15 @@
 
 			return result;
 		}
+		/**
+		 * @method  decimal
+		 * @memberof    Validator.validMethods
+		 * @param   {number}    digit   小数点右侧的最大位数
+		 * @param   {number=}   size    数字的最大位数（可选）
+		 * @return  {boolean}   验证结果
+		 * @desc    检测浮点型数值，至少 1 个参数，参数 1 为小数点右侧的最大位数，参数 2 为数字的最大位数（可选），其余参数忽略
+		 * */
 		, decimal: function(digit, size){
-			// 检测浮点型数值，至少 1 个参数，参数 1 为小数点右侧的最大位数，参数 2 为数字的最大位数（可选），其余参数忽略
-
 			var result = false
 				, argc = arguments.length
 				, regexp
@@ -538,13 +883,30 @@
 
 			return result;
 		}
+		/**
+		 * @method  exponent
+		 * @memberof    Validator.validMethods
+		 * @return  {boolean}   验证结果
+		 * @desc    检测指数数值
+		 * */
 		, exponent: function(){
-			// 检测指数数值
 			return /^-?\d+(?:\.\d*)?(?:e[+\-]?\d+)?$/i.test( this.val() );
 		}
 		/**
-		 *  ajax验证
+		 *  ajax 验证
 		 *  todo 改成 异步
+		 * */
+		/**
+		 * @method  ajax
+		 * @memberof    Validator.validMethods
+		 * @param   {string}    url 服务器链接路径
+		 * @param   {*} expected    对服务器返回结果的期望值
+		 * @param   {string}    type    发送 ajax 的类型
+		 * @param   {string|object} param   发送 ajax 时附带的额外参数
+		 * @return  {boolean}   验证结果
+		 * @desc    ajax 将值发送到服务器端进行验证，方法为同步
+		 * @todo    改成异步
+		 * @todo    可执行 jsonp
 		 * */
 		, ajax: function(url, expected, type, param){
 			var self = this
@@ -574,28 +936,53 @@
 		/**
 		 *  特殊验证类型
 		 * */
+		/**
+		 * @method  url
+		 * @memberof    Validator.validMethods
+		 * @param   {regexp=}   regexp  自定义验证正则表达式
+		 * @return  {boolean}   验证结果
+		 * @desc    检验是否为合法 url，可以自定义验证正则表达式
+		 * */
 		, url: function( regexp ){
-			// 检验是否为合法 url，可以自定义验证正则表达式
-
 			return (regexp || /^(?:http(?:s?):\/\/)?[a-z0-9\u4E00-\u9FA5\-_\.]*[a-z0-9\-_\u4E00-\u9FA5]+(?::(\d+))?\.[a-z0-9\u4E00-\u9FA5]+[0-9a-z\$\-\._'\(\)\/!\?#&\+=%\u4E00-\u9FA5]*/i).test( this.val() );
 		}
+		/**
+		 * @method  email
+		 * @memberof    Validator.validMethods
+		 * @param   {regexp=}   regexp  自定义验证正则表达式
+		 * @return  {boolean}   验证结果
+		 * @desc    检验是否为合法邮箱，可以自定义验证正则表达式
+		 * */
 		, email: function( regexp ){
-			// 检验是否为合法邮箱，可以自定义验证正则表达式
-
 			return (regexp || /^(?:[a-z0-9_\-\.'])+@(?:[a-z0-9_\-\.])+\.(?:[a-z]{2,6})$/i).test( this.val() );
 		}
+		/**
+		 * @return  {boolean}   验证结果
+		 * @desc    检测是否为中文，正则表达式为 /^[\u4E00-\u9FA5]*$/
+		 * */
 		, isChinese: function(){
-			// 检测是否为中文，正则表达式为 /^[\u4E00-\u9FA5]*$/
 			return /^[\u4E00-\u9FA5]*$/.test( this.val() );
 		}
+		/**
+		 * @method  idNumber
+		 * @memberof    Validator.validMethods
+		 * @param   {regexp=}   regexp  自定义验证正则表达式
+		 * @return  {boolean}   验证结果
+		 * @desc    检测是否为合法身份证号码，可以自定义验证正则表达式
+		 * */
 		, idNumber: function( regexp ){
-			// 检测是否为合法身份证号码，可以自定义验证正则表达式
-
 			return (regexp || /^\d{6}(?:((?:19|20)\d{2})(?:0[1-9]|1[0-2])(?:0[1-9]|[1-2]\d|3[0-1])\d{3}(?:x|X|\d)|(?:\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[1-2]\d|3[0-1])\d{3}))$/).test( this.val() );
 		}
+		/**
+		 * @method  file
+		 * @memberof    Validator.validMethods
+		 * @param   {string|string[]}   type    验证文件类型，字符串格式为逗号分隔，或为文件类型的数组
+		 * @param   {string|number} size    文件大小
+		 * @return  {boolean}   验证结果
+		 * @desc    检测上传文件是否为合法的文件类型（未完成）
+		 * @todo    待完成
+		 * */
 		, file: function(type, size){
-			// 检测上传文件是否为合法的文件类型
-
 			var result = false;
 
 			if( type ){
@@ -607,11 +994,33 @@
 
 			return result;
 		}
+		/**
+		 * @method  tel
+		 * @memberof    Validator.validMethods
+		 * @return  {boolean}   验证结果
+		 * @desc    验证是否为电话号码
+		 * @todo    待完成
+		 * */
 		, tel: function(){
+			var result = false;
 
+			// todo 验证电话号码
+
+			return result;
 		}
+		/**
+		 * @method  phone
+		 * @memberof    Validator.validMethods
+		 * @return  {boolean}   验证结果
+		 * @desc    验证是否为手机号码
+		 * @todo    待完成
+		 * */
 		, phone: function(){
+			var result = false;
 
+			// todo 验证手机号码
+
+			return result;
 		}
 	};
 
